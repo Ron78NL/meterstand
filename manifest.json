@@ -1,0 +1,18 @@
+{
+  "id": "/meterstand/",
+  "start_url": "/meterstand/",
+  "scope": "/meterstand/",
+  "name": "Mijn Meterstand",
+  "short_name": "Meterstand",
+  "description": "Stroom, water en gas in euro per dag",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f2ec",
+  "theme_color": "#f6f2ec",
+  "lang": "nl-BE",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

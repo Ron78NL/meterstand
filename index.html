@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f2ec">
+<title>Mijn Meterstand</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Meterstand">
+<meta name="description" content="Stroom, water en gas in euro per dag">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --paper:#f6f2ec; --card:#fffdfa; --ink:#17150f; --muted:#6f6757; --faint:#9a9284;
+  --line:#e4ddd1; --line2:#f0eae0;
+  --elec:#b2470f; --elec-bg:#fdf1e8;
+  --water:#0f6b7d; --water-bg:#e9f4f6;
+  --gas:#7a5a12; --gas-bg:#f8f1e0;
+  --up:#a1341c; --down:#2f6b3a;
+  --r:14px;
+}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.45;
+  padding-bottom:calc(74px + env(safe-area-inset-bottom));
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:560px;margin:0 auto;padding:0 18px}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+/* header */
+header{padding:26px 0 14px;border-bottom:1px solid var(--line)}
+header h1{font-size:17px;font-weight:650;letter-spacing:-.01em}
+header p{font-size:13px;color:var(--muted);margin-top:2px}
+
+section.page{display:none;padding-top:20px}
+section.page.on{display:block}
+
+/* hero */
+.hero{text-align:center;padding:26px 0 22px}
+.hero .lbl{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.hero .big{font-size:clamp(50px,16vw,74px);font-weight:700;letter-spacing:-.045em;line-height:1;margin:10px 0 6px}
+.hero .sub{font-size:14px;color:var(--muted)}
+.trend{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;margin-top:10px;padding:4px 10px;border-radius:999px;background:#efe9df}
+.trend.up{color:var(--up)} .trend.down{color:var(--down)}
+
+/* split bar */
+.splitbar{display:flex;height:9px;border-radius:999px;overflow:hidden;background:var(--line2);margin:4px 0 14px}
+.splitbar i{display:block;height:100%}
+
+.rows{border-top:1px solid var(--line)}
+.row{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line2)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.row .nm{flex:1;font-size:15px;font-weight:550}
+.row .qt{font-size:12.5px;color:var(--faint);font-weight:450;display:block;margin-top:1px}
+.row .val{font-size:16px;font-weight:650;letter-spacing:-.015em}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-top:14px}
+.card h3{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:650;margin-bottom:10px}
+.kv{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;font-size:14.5px}
+.kv+.kv{border-top:1px solid var(--line2)}
+.kv b{font-weight:650;letter-spacing:-.01em}
+.hint{font-size:13px;color:var(--muted);line-height:1.5}
+
+/* forms */
+label.f{display:block;margin-top:14px}
+label.f span{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:5px}
+label.f em{font-style:normal;font-weight:450;color:var(--faint)}
+input,select,textarea{
+  width:100%;font:inherit;font-variant-numeric:tabular-nums;
+  padding:11px 13px;border:1px solid var(--line);border-radius:10px;
+  background:var(--card);color:var(--ink);
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ink);outline-offset:-1px;border-color:var(--ink)}
+textarea{font-size:12.5px;line-height:1.4;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;cursor:pointer;border:none;border-radius:10px}
+.btn{width:100%;padding:14px;background:var(--ink);color:var(--paper);font-weight:650;margin-top:18px;letter-spacing:-.01em}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);margin-top:10px}
+.btn.sm{width:auto;padding:9px 14px;font-size:14px;margin:0}
+
+.pillrow{display:flex;gap:8px;margin-top:6px}
+.pill{flex:1;padding:10px;text-align:center;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:14px;font-weight:600;color:var(--muted)}
+.pill.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* history */
+.hitem{padding:14px 0;border-bottom:1px solid var(--line2)}
+.hitem .top{display:flex;justify-content:space-between;align-items:baseline}
+.hitem .dt{font-size:14px;font-weight:600}
+.hitem .eu{font-size:15px;font-weight:700;letter-spacing:-.015em}
+.hitem .de{font-size:12.5px;color:var(--faint);margin-top:3px}
+.bars{display:flex;align-items:flex-end;gap:5px;height:84px;margin:8px 0 16px}
+.bars div{flex:1;background:var(--elec);border-radius:3px 3px 0 0;min-height:3px;opacity:.85}
+
+.empty{text-align:center;padding:40px 10px;color:var(--muted)}
+.empty h3{font-size:16px;color:var(--ink);margin-bottom:8px;font-weight:650}
+
+.note{background:var(--elec-bg);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin-top:14px;color:#5d3414}
+.note.blue{background:var(--water-bg);color:#154f5b}
+.note b{font-weight:680}
+
+/* tabs */
+nav.tabs{
+  position:fixed;left:0;right:0;bottom:0;background:rgba(246,242,236,.94);
+  backdrop-filter:blur(12px);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);z-index:9
+}
+nav.tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+nav.tabs button{background:none;padding:11px 0 13px;color:var(--faint);font-size:11px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px;letter-spacing:.01em}
+nav.tabs button.on{color:var(--ink)}
+nav.tabs svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#2f6b3a;display:inline-block;margin-right:6px;animation:p 1.6s infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.25}}
+.toast{position:fixed;left:50%;bottom:92px;transform:translate(-50%,16px);background:var(--ink);color:var(--paper);padding:11px 18px;border-radius:999px;font-size:14px;font-weight:600;opacity:0;transition:.22s;pointer-events:none;z-index:20}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Mijn Meterstand</h1>
+    <p id="hsub">Stroom en water in euro's</p>
+  </header>
+
+  <!-- ============ NU ============ -->
+  <section class="page on" id="p-nu">
+    <div id="nu-empty" class="empty" hidden>
+      <h3>Nog geen gegevens</h3>
+      <p class="hint">Vul eerst je tarieven in, noteer daarna je eerste meterstanden. Vanaf de tweede keer zie je wat je verbruik kost.</p>
+      <button class="btn" onclick="go('inst')">Tarieven invullen</button>
+    </div>
+
+    <div id="nu-one" class="empty" hidden>
+      <h3>Eerste stand genoteerd</h3>
+      <p class="hint">Noteer over een paar dagen opnieuw je standen. Dan kan ik berekenen wat je per dag verbruikt. Hoe langer je wacht, hoe betrouwbaarder.</p>
+      <button class="btn ghost" onclick="go('in')">Nieuwe stand invoeren</button>
+    </div>
+
+    <div id="nu-main" hidden>
+      <div class="hero">
+        <div class="lbl">Je verbruikt nu ongeveer</div>
+        <div class="big num" id="h-day">&euro;0,00</div>
+        <div class="sub">per dag</div>
+        <div id="h-trend"></div>
+      </div>
+
+      <div class="splitbar" id="h-split"></div>
+      <div class="rows" id="h-rows"></div>
+
+      <div class="card">
+        <h3>Vooruitblik</h3>
+        <div class="kv"><span>Deze maand tot nu</span><b class="num" id="v-mtd">&ndash;</b></div>
+        <div class="kv"><span>Hele maand (schatting)</span><b class="num" id="v-mon">&ndash;</b></div>
+        <div class="kv"><span>Per jaar (schatting)</span><b class="num" id="v-yr">&ndash;</b></div>
+        <p class="hint" style="margin-top:10px">Schatting op basis van je laatste meetperiode, inclusief vaste kosten. Gas en stroom schommelen met de seizoenen: een jaarcijfer uit een winterperiode valt te hoog uit, uit een zomerperiode te laag. Pas na een vol jaar meten klopt het echt.</p>
+      </div>
+
+      <div class="card">
+        <h3>Laatste meetperiode</h3>
+        <div id="per-detail"></div>
+      </div>
+    </div>
+
+    <div class="card" id="piek-card">
+      <h3>Maandpiek</h3>
+      <div id="piek-body"></div>
+    </div>
+
+    <div class="card" id="live-card">
+      <h3>Live meelezen (P1)</h3>
+      <div id="live-off">
+        <p class="hint">Met een P1-uitlezer op je digitale meter zie je hier je verbruik van dit moment, in euro per uur. Vul het IP-adres van je HomeWizard P1 in.</p>
+        <label class="f"><span>IP-adres <em>(staat in de HomeWizard-app)</em></span>
+          <input id="i-ip" inputmode="decimal" placeholder="192.168.0.42"></label>
+        <button class="btn ghost" onclick="connectLive()">Verbinden</button>
+      </div>
+      <div id="live-on" hidden>
+        <div class="hero" style="padding:8px 0 14px">
+          <div class="lbl"><span class="live-dot"></span>Op dit moment</div>
+          <div class="big num" id="l-eur" style="font-size:clamp(38px,11vw,54px)">&euro;0,00</div>
+          <div class="sub">per uur &middot; <span class="num" id="l-w">0</span> watt</div>
+        </div>
+        <div class="kv"><span>Vandaag verbruikt</span><b class="num" id="l-today">&ndash;</b></div>
+        <div class="kv" id="l-water-row" hidden><span>Water vandaag</span><b class="num" id="l-water">&ndash;</b></div>
+        <button class="btn ghost" onclick="stopLive()">Live stoppen</button>
+      </div>
+      <div id="live-msg"></div>
+    </div>
+  </section>
+
+  <!-- ============ INVOEREN ============ -->
+  <section class="page" id="p-in">
+    <p class="hint">Lees je standen af en vul ze hier in. Op de elektriciteitsmeter druk je op de groene knop tot je <b>1.8.1</b> ziet (dag) en <b>1.8.2</b> (nacht). Op de watermeter druk je op de blauwe knop.</p>
+
+    <div class="card">
+      <h3>Nieuwe meterstand</h3>
+      <label class="f"><span>Datum</span><input type="date" id="i-date"></label>
+
+      <div id="in-dual">
+        <div class="two">
+          <label class="f"><span>Stroom dag <em>1.8.1</em></span><input id="i-dag" inputmode="decimal" placeholder="kWh"></label>
+          <label class="f"><span>Stroom nacht <em>1.8.2</em></span><input id="i-nacht" inputmode="decimal" placeholder="kWh"></label>
+        </div>
+      </div>
+      <div id="in-single" hidden>
+        <label class="f"><span>Stroom totaal <em>1.8.0</em></span><input id="i-enkel" inputmode="decimal" placeholder="kWh"></label>
+      </div>
+
+      <label class="f"><span>Water <em>m&sup3; &mdash; cijfers v&oacute;&oacute;r de punt</em></span><input id="i-water" inputmode="decimal" placeholder="m3"></label>
+      <label class="f" id="in-gas"><span>Gas <em>m&sup3; (optioneel)</em></span><input id="i-gas" inputmode="decimal" placeholder="m3"></label>
+      <label class="f"><span>Maandpiek <em>kW &mdash; code 1.6.0, optioneel</em></span><input id="i-piek" inputmode="decimal" placeholder="kW"></label>
+
+      <button class="btn" onclick="saveReading()">Opslaan</button>
+      <div id="in-prev" class="hint" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- ============ HISTORIE ============ -->
+  <section class="page" id="p-hist">
+    <div id="hist-body"></div>
+  </section>
+
+  <!-- ============ INSTELLINGEN ============ -->
+  <section class="page" id="p-inst">
+    <p class="hint">Deze bedragen zijn al ingevuld op basis van je Luminus-tariefkaart (MaxxFix, tweevoudige meter), de netkosten van Fluvius Imewo en de Farys-tarieven. Pas ze aan zodra je eerste afrekening binnen is.</p>
+    <div class="note"><b>E&eacute;n cijfer blijft een schatting:</b> de Brugse saneringsbijdrage op water. Het capaciteitstarief rekent nu met je echte maandpiek, maar die is voorlopig op &eacute;&eacute;n maand gebaseerd &mdash; noteer hem elke maand mee. Alle andere bedragen komen uit je contract.</div>
+
+    <div class="card">
+      <h3>Stroom</h3>
+      <div class="pillrow">
+        <div class="pill" id="pill-dual" onclick="setMode('dual')">Dag &amp; nacht</div>
+        <div class="pill" id="pill-single" onclick="setMode('single')">E&eacute;n tarief</div>
+      </div>
+      <div id="s-dual">
+        <div class="two">
+          <label class="f"><span>Dagtarief <em>&euro;/kWh</em></span><input id="s-pdag" inputmode="decimal"></label>
+          <label class="f"><span>Nachttarief <em>&euro;/kWh</em></span><input id="s-pnacht" inputmode="decimal"></label>
+        </div>
+      </div>
+      <div id="s-single" hidden>
+        <label class="f"><span>Tarief <em>&euro;/kWh</em></span><input id="s-penkel" inputmode="decimal"></label>
+      </div>
+      <label class="f"><span>Vaste kosten stroom <em>&euro; per jaar</em></span><input id="s-evast" inputmode="decimal"></label>
+      <p class="hint" style="margin-top:8px">Vaste vergoeding van je leverancier plus databeheer van Fluvius.</p>
+      <label class="f"><span>Capaciteitstarief <em>&euro; per kW maandpiek per jaar</em></span><input id="s-cap" inputmode="decimal"></label>
+      <label class="f"><span>Maandpiek als je er nog geen noteerde <em>kW</em></span><input id="s-piekterug" inputmode="decimal"></label>
+    </div>
+
+    <div class="card">
+      <h3>Water</h3>
+      <label class="f"><span>Prijs <em>&euro;/m&sup3; alles inbegrepen</em></span><input id="s-pwater" inputmode="decimal"></label>
+      <label class="f"><span>Vaste kosten water <em>&euro; per jaar</em></span><input id="s-wvast" inputmode="decimal"></label>
+      <p class="hint" style="margin-top:8px">Neem je jaarfactuur, deel het totaalbedrag door het aantal verbruikte m&sup3;. Dat is je echte prijs per m&sup3;.</p>
+    </div>
+
+    <div class="card">
+      <h3>Gas</h3>
+      <div class="pillrow">
+        <div class="pill" id="pill-gason" onclick="setGas(true)">Meetellen</div>
+        <div class="pill" id="pill-gasoff" onclick="setGas(false)">Overslaan</div>
+      </div>
+      <div id="s-gasbox">
+        <label class="f"><span>Prijs <em>&euro;/m&sup3;</em></span><input id="s-pgas" inputmode="decimal"></label>
+        <label class="f"><span>Vaste kosten gas <em>&euro; per jaar</em></span><input id="s-gvast" inputmode="decimal"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Reservekopie</h3>
+      <p class="hint">Alles staat alleen in deze browser. Kopieer af en toe de tekst hieronder en bewaar ze in je notities of mail ze naar jezelf. Raak je je gegevens kwijt, dan plak je die tekst hier terug en druk je op Herstellen.</p>
+      <label class="f"><span>Je gegevens</span><textarea id="bak" rows="4" spellcheck="false"></textarea></label>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn sm ghost" style="flex:1" onclick="copyBackup()">Kopieer</button>
+        <button class="btn sm ghost" style="flex:1" onclick="restoreBackup()">Herstellen</button>
+      </div>
+    </div>
+
+    <button class="btn" onclick="saveSettings()">Instellingen bewaren</button>
+    <div style="height:20px"></div>
+  </section>
+</div>
+
+<nav class="tabs"><div class="in">
+  <button class="on" id="t-nu" onclick="go('nu')"><svg viewBox="0 0 24 24"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Nu</button>
+  <button id="t-in" onclick="go('in')"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Invoeren</button>
+  <button id="t-hist" onclick="go('hist')"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-7"/></svg>Historie</button>
+  <button id="t-inst" onclick="go('inst')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>Instellingen</button>
+</div></nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const KEY='meterstand_v1';
+/* Ingevuld op basis van: Luminus MaxxFix tariefkaart aug 2026 (tweevoudige meter),
+   netkosten Fluvius Imewo (Brugge), accijnzen, en Farys-tarieven 2026.
+   Schattingen: capaciteitstarief (maandpiek) en de Brugse saneringsbijdrage. */
+const DEF={elecMode:'dual',pDag:0.339,pNacht:0.300,pEnkel:0.325,
+           eVast:85,capTarief:60.90,piekTerug:4.5,
+           pWater:6.50,wVast:21,gasOn:true,pGas:1.16,gVast:155,ip:''};
+const SEED=[
+ {ts:new Date('2026-08-31T12:00:00').getTime(),dag:210,nacht:289,enkel:null,water:6,gas:280,piek:null},
+ {ts:new Date('2026-11-21T11:00:00').getTime(),dag:726.138,nacht:651.345,enkel:null,water:24.875,gas:516.2211,piek:5.431}
+];
+let S=load();
+
+function load(){
+  try{const r=JSON.parse(localStorage.getItem(KEY));
+    if(r&&r.set) return {set:Object.assign({},DEF,r.set),readings:r.readings||[],configured:!!r.configured};
+  }catch(e){}
+  return {set:Object.assign({},DEF),readings:SEED.map(r=>Object.assign({},r)),configured:true};
+}
+function save(){localStorage.setItem(KEY,JSON.stringify(S))}
+
+const eur=n=>'€'+n.toLocaleString('nl-BE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num=(n,d)=>n.toLocaleString('nl-BE',{minimumFractionDigits:d||0,maximumFractionDigits:d===undefined?1:d});
+const DAY=864e5;
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),1900)}
+function parseN(v){if(v===null||v===undefined)return null;v=String(v).trim().replace(',','.');if(v==='')return null;const n=parseFloat(v);return isNaN(n)?null:n}
+function dmy(ts){return new Date(ts).toLocaleDateString('nl-BE',{day:'numeric',month:'short',year:'numeric'})}
+function dm(ts){return new Date(ts).toLocaleDateString('nl-BE',{day:'numeric',month:'short'})}
+
+/* ---------- berekening ---------- */
+const KEYS=()=>['elec','water'].concat(S.set.gasOn?['gas']:[]);
+const LBL={elec:'Stroom',water:'Water',gas:'Gas'};
+const CLR={elec:'var(--elec)',water:'var(--water)',gas:'var(--gas)'};
+
+function elecOf(r){
+  if(S.set.elecMode==='single') return r.enkel??null;
+  if((r.dag??null)===null&&(r.nacht??null)===null) return null;
+  return (r.dag||0)+(r.nacht||0);
+}
+function hasVal(r,k){
+  if(k==='elec') return elecOf(r)!==null;
+  return (r[k]??null)!==null;
+}
+function pieken(){return S.readings.map(r=>r.piek??null).filter(v=>v!==null&&v>0)}
+function gemPiek(){const p=pieken();return p.length?p.reduce((a,b)=>a+b,0)/p.length:S.set.piekTerug}
+function piekKw(){return Math.max(2.5,gemPiek())}
+function capPerDag(){return piekKw()*S.set.capTarief/365.25}
+
+function reeks(k){
+  const rs=S.readings.filter(r=>hasVal(r,k)).sort((x,y)=>x.ts-y.ts), out=[];
+  for(let i=1;i<rs.length;i++){
+    const a=rs[i-1],b=rs[i],days=(b.ts-a.ts)/DAY; if(days<=0) continue;
+    let qty=0,cost=0;
+    if(k==='elec'){
+      if(S.set.elecMode==='dual'){
+        const dd=(b.dag||0)-(a.dag||0), nn=(b.nacht||0)-(a.nacht||0);
+        qty=dd+nn; cost=dd*S.set.pDag+nn*S.set.pNacht;
+      }else{ qty=(b.enkel||0)-(a.enkel||0); cost=qty*S.set.pEnkel; }
+      cost+=(S.set.eVast/365.25+capPerDag())*days;
+    }else if(k==='water'){
+      qty=b.water-a.water; cost=qty*S.set.pWater+S.set.wVast/365.25*days;
+    }else{
+      qty=b.gas-a.gas; cost=qty*S.set.pGas+S.set.gVast/365.25*days;
+    }
+    out.push({k,from:a.ts,to:b.ts,days,qty,cost,perDay:cost/days});
+  }
+  return out;
+}
+function laatste(k){const a=reeks(k);return a.length?a[a.length-1]:null}
+function vorige(k){const a=reeks(k);return a.length>1?a[a.length-2]:null}
+function perDagTotaal(){return KEYS().reduce((s,k)=>s+(laatste(k)?laatste(k).perDay:0),0)}
+function hoeveelheid(x){
+  if(x.k==='elec') return num(x.qty/x.days,1)+' kWh per dag';
+  if(x.k==='water') return num(x.qty/x.days*1000,0)+' liter per dag';
+  return num(x.qty/x.days,1)+' m\u00B3 per dag';
+}
+function totaalQty(x){
+  if(x.k==='elec') return num(x.qty,1)+' kWh';
+  if(x.k==='water') return num(x.qty,2)+' m\u00B3';
+  return num(x.qty,1)+' m\u00B3';
+}
+
+/* ---------- schermen ---------- */
+function go(p){
+  document.querySelectorAll('.page').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('nav.tabs button').forEach(e=>e.classList.remove('on'));
+  document.getElementById('p-'+p).classList.add('on');
+  document.getElementById('t-'+p).classList.add('on');
+  window.scrollTo(0,0);
+  if(p==='hist') renderHist();
+  if(p==='in') prepInput();
+  if(p==='inst'){fillSettings();fillBackup();}
+}
+
+function render(){
+  const act=KEYS().filter(k=>laatste(k)), n=S.readings.length;
+  document.getElementById('nu-empty').hidden = !(n===0);
+  document.getElementById('nu-one').hidden   = !(n>0&&!act.length);
+  document.getElementById('nu-main').hidden  = !act.length;
+  renderPiek();
+  if(!act.length) return;
+
+  const tot=perDagTotaal();
+  document.getElementById('h-day').textContent=eur(tot);
+
+  const tEl=document.getElementById('h-trend');
+  if(act.length&&act.every(k=>vorige(k))){
+    const pv=act.reduce((s,k)=>s+vorige(k).perDay,0), d=(tot-pv)/pv*100;
+    tEl.innerHTML = Math.abs(d)>=1
+      ? '<span class="trend '+(d>0?'up':'down')+'">'+(d>0?'\u25B2':'\u25BC')+' '+num(Math.abs(d))+'% tegenover vorige periode</span>'
+      : '<span class="trend">Gelijk aan vorige periode</span>';
+  } else tEl.innerHTML='';
+
+  document.getElementById('h-split').innerHTML=act.map(k=>
+    '<i style="background:'+CLR[k]+';width:'+(laatste(k).perDay/tot*100)+'%"></i>').join('');
+  document.getElementById('h-rows').innerHTML=act.map(k=>{
+    const x=laatste(k);
+    return '<div class="row"><span class="dot" style="background:'+CLR[k]+'"></span>'+
+      '<span class="nm">'+LBL[k]+'<span class="qt">'+hoeveelheid(x)+'</span></span>'+
+      '<span class="val num">'+eur(x.perDay)+'</span></div>';
+  }).join('');
+
+  const now=new Date(), dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  document.getElementById('v-mtd').textContent=eur(tot*now.getDate());
+  document.getElementById('v-mon').textContent=eur(tot*dim);
+  document.getElementById('v-yr').textContent=eur(tot*365);
+
+  document.getElementById('per-detail').innerHTML=act.map(k=>{
+    const x=laatste(k);
+    return '<div class="kv"><span>'+LBL[k]+'<span class="qt">'+dm(x.from)+' \u2192 '+dm(x.to)+
+      ' &middot; '+num(x.days,0)+' dagen</span></span><b class="num">'+totaalQty(x)+' &middot; '+eur(x.cost)+'</b></div>';
+  }).join('');
+}
+
+function renderPiek(){
+  const el=document.getElementById('piek-body'), ps=pieken();
+  const jaar=piekKw()*S.set.capTarief;
+  let h='';
+  if(ps.length){
+    h+='<div class="kv"><span>Laatst genoteerd</span><b class="num">'+num(ps[ps.length-1],2)+' kW</b></div>';
+    h+='<div class="kv"><span>Gemiddelde over '+ps.length+' meting'+(ps.length>1?'en':'')+'</span><b class="num">'+num(gemPiek(),2)+' kW</b></div>';
+  }else{
+    h+='<div class="kv"><span>Nog niets genoteerd</span><b class="num">'+num(S.set.piekTerug,2)+' kW aangenomen</b></div>';
+  }
+  h+='<div class="kv"><span>Capaciteitstarief</span><b class="num">'+eur(jaar)+' per jaar</b></div>';
+  h+='<p class="hint" style="margin-top:10px">Je betaalt per kW gemiddelde maandpiek. Noteer die elke maand mee bij je meterstand &mdash; op je meter is dat <b>1.6.0</b>. Hoe meer maanden, hoe juister dit bedrag.</p>';
+  el.innerHTML=h;
+}
+
+function renderHist(){
+  const el=document.getElementById('hist-body'), act=KEYS().filter(k=>reeks(k).length);
+  if(!act.length){el.innerHTML='<div class="empty"><h3>Nog niets te tonen</h3><p class="hint">Na twee meterstanden verschijnt hier je verloop.</p></div>';return}
+  let h='';
+  const e=reeks('elec');
+  if(e.length>1){
+    const mx=Math.max(...e.map(x=>x.perDay));
+    h+='<div class="card"><h3>Stroom &mdash; euro per dag</h3><div class="bars">'+
+      e.map(x=>'<div style="height:'+(x.perDay/mx*100)+'%"></div>').join('')+
+      '</div><div class="hint">'+dm(e[0].from)+' tot '+dm(e[e.length-1].to)+'</div></div>';
+  }
+  for(const k of act){
+    h+='<div class="card"><h3>'+LBL[k]+'</h3>';
+    for(const x of reeks(k).slice().reverse()){
+      h+='<div class="hitem"><div class="top"><span class="dt">'+dm(x.from)+' \u2013 '+dm(x.to)+'</span>'+
+         '<span class="eu num">'+eur(x.perDay)+' / dag</span></div>'+
+         '<div class="de num">'+num(x.days,0)+' dagen &middot; '+totaalQty(x)+' &middot; totaal '+eur(x.cost)+'</div></div>';
+    }
+    h+='</div>';
+  }
+  const rs=[...S.readings].sort((a,b)=>b.ts-a.ts);
+  h+='<div class="card"><h3>Ingevoerde standen</h3>';
+  for(const r of rs){
+    const v=[]; const ee=elecOf(r);
+    if(ee!==null) v.push(num(ee,1)+' kWh');
+    if((r.water??null)!==null) v.push(num(r.water,2)+' m\u00B3 water');
+    if(S.set.gasOn&&(r.gas??null)!==null) v.push(num(r.gas,1)+' m\u00B3 gas');
+    if((r.piek??null)!==null) v.push('piek '+num(r.piek,2)+' kW');
+    h+='<div class="hitem"><div class="top"><span class="dt">'+dmy(r.ts)+'</span>'+
+       '<button class="btn sm ghost" style="padding:5px 10px;font-size:12.5px" onclick="delReading('+r.ts+')">Wissen</button></div>'+
+       '<div class="de num">'+(v.join(' &middot; ')||'leeg')+'</div></div>';
+  }
+  h+='</div><div style="height:20px"></div>';
+  el.innerHTML=h;
+}
+
+/* ---------- invoer ---------- */
+function prepInput(){
+  document.getElementById('in-dual').hidden=S.set.elecMode!=='dual';
+  document.getElementById('in-single').hidden=S.set.elecMode==='dual';
+  document.getElementById('in-gas').hidden=!S.set.gasOn;
+  const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  document.getElementById('i-date').value=d.toISOString().slice(0,10);
+  ['i-dag','i-nacht','i-enkel','i-water','i-gas','i-piek'].forEach(k=>document.getElementById(k).value='');
+  const rs=[...S.readings].sort((a,b)=>b.ts-a.ts);
+  const p=document.getElementById('in-prev');
+  if(rs.length){
+    const r=rs[0], e=elecOf(r);
+    p.innerHTML='Vorige stand ('+dmy(r.ts)+'): '+
+      (e!==null?'<b>'+num(e,1)+' kWh</b>':'') + (r.water!==null?' &middot; <b>'+num(r.water,2)+' m³</b> water':'')+
+      (S.set.gasOn&&r.gas!==null?' &middot; <b>'+num(r.gas,1)+' m³</b> gas':'')+
+      '<br>De nieuwe standen moeten h&oacute;ger zijn dan deze.';
+  } else p.innerHTML='Dit wordt je eerste meting.';
+}
+function saveReading(){
+  const dv=document.getElementById('i-date').value;
+  if(!dv){toast('Kies een datum');return}
+  const ts=new Date(dv+'T12:00:00').getTime();
+  const r={ts,dag:null,nacht:null,enkel:null,water:null,gas:null,piek:null};
+  if(S.set.elecMode==='dual'){
+    r.dag=parseN(document.getElementById('i-dag').value);
+    r.nacht=parseN(document.getElementById('i-nacht').value);
+  } else r.enkel=parseN(document.getElementById('i-enkel').value);
+  r.water=parseN(document.getElementById('i-water').value);
+  if(S.set.gasOn) r.gas=parseN(document.getElementById('i-gas').value);
+  r.piek=parseN(document.getElementById('i-piek').value);
+  if(elecOf(r)===null&&r.water===null&&r.gas===null&&r.piek===null){toast('Vul minstens iets in');return}
+
+  const prev=[...S.readings].filter(x=>x.ts<ts).sort((a,b)=>b.ts-a.ts)[0];
+  if(prev){
+    const pe=elecOf(prev), ne=elecOf(r);
+    if(pe!==null&&ne!==null&&ne<pe){toast('Stroomstand is lager dan vorige keer');return}
+    if(prev.water!==null&&r.water!==null&&r.water<prev.water){toast('Waterstand is lager dan vorige keer');return}
+  }
+  S.readings=S.readings.filter(x=>x.ts!==ts); S.readings.push(r); save();
+  toast('Opgeslagen'); render(); go('nu');
+}
+function delReading(ts){
+  S.readings=S.readings.filter(x=>x.ts!==ts); save(); renderHist(); render(); toast('Gewist');
+}
+
+/* ---------- instellingen ---------- */
+function setMode(m){S.set.elecMode=m;fillSettings()}
+function setGas(v){S.set.gasOn=v;fillSettings()}
+function fillSettings(){
+  const s=S.set;
+  document.getElementById('pill-dual').classList.toggle('on',s.elecMode==='dual');
+  document.getElementById('pill-single').classList.toggle('on',s.elecMode!=='dual');
+  document.getElementById('s-dual').hidden=s.elecMode!=='dual';
+  document.getElementById('s-single').hidden=s.elecMode==='dual';
+  document.getElementById('pill-gason').classList.toggle('on',s.gasOn);
+  document.getElementById('pill-gasoff').classList.toggle('on',!s.gasOn);
+  document.getElementById('s-gasbox').hidden=!s.gasOn;
+  const set=(id,v)=>document.getElementById(id).value=String(v).replace('.',',');
+  set('s-pdag',s.pDag);set('s-pnacht',s.pNacht);set('s-penkel',s.pEnkel);set('s-evast',s.eVast);
+  set('s-pwater',s.pWater);set('s-wvast',s.wVast);set('s-pgas',s.pGas);set('s-gvast',s.gVast);
+  set('s-cap',s.capTarief);set('s-piekterug',s.piekTerug);
+}
+function saveSettings(){
+  const g=id=>parseN(document.getElementById(id).value);
+  const s=S.set;
+  s.pDag=g('s-pdag')??s.pDag; s.pNacht=g('s-pnacht')??s.pNacht; s.pEnkel=g('s-penkel')??s.pEnkel;
+  s.eVast=g('s-evast')??s.eVast; s.pWater=g('s-pwater')??s.pWater; s.wVast=g('s-wvast')??s.wVast;
+  s.pGas=g('s-pgas')??s.pGas; s.gVast=g('s-gvast')??s.gVast;
+  s.capTarief=g('s-cap')??s.capTarief; s.piekTerug=g('s-piekterug')??s.piekTerug;
+  S.configured=true; save(); render(); toast('Bewaard'); go(S.readings.length?'nu':'in');
+}
+
+/* ---------- back-up ---------- */
+function fillBackup(){
+  const t=document.getElementById('bak'); if(t) t.value=JSON.stringify(S);
+}
+async function copyBackup(){
+  const t=document.getElementById('bak'); t.select();
+  try{ await navigator.clipboard.writeText(t.value); toast('Gekopieerd'); }
+  catch(e){ toast('Selecteer de tekst en kopieer ze zelf'); }
+}
+function restoreBackup(){
+  const v=document.getElementById('bak').value.trim();
+  if(!v){toast('Plak eerst je bewaarde tekst');return}
+  try{
+    const d=JSON.parse(v);
+    if(!d.set) throw 0;
+    S={set:Object.assign({},DEF,d.set),readings:d.readings||[],configured:true};
+    save(); fillSettings(); render(); toast('Hersteld');
+  }catch(e){ toast('Die tekst kan ik niet lezen'); }
+}
+
+/* ---------- live P1 ---------- */
+let liveT=null;
+function connectLive(){
+  const ip=document.getElementById('i-ip').value.trim();
+  if(!ip){toast('Vul het IP-adres in');return}
+  S.set.ip=ip; save(); startLive();
+}
+function startLive(){
+  document.getElementById('live-msg').innerHTML='<p class="hint" style="margin-top:12px">Verbinden…</p>';
+  tickLive(); clearInterval(liveT); liveT=setInterval(tickLive,2000);
+}
+function stopLive(){
+  clearInterval(liveT); liveT=null;
+  document.getElementById('live-on').hidden=true;
+  document.getElementById('live-off').hidden=false;
+  document.getElementById('live-msg').innerHTML='';
+}
+async function tickLive(){
+  try{
+    const c=new AbortController(); setTimeout(()=>c.abort(),2500);
+    const res=await fetch('http://'+S.set.ip+'/api/v1/data',{cache:'no-store',signal:c.signal});
+    const d=await res.json();
+    const w=d.active_power_w ?? 0;
+    const pr=S.set.elecMode==='dual'?S.set.pDag:S.set.pEnkel;
+    document.getElementById('live-off').hidden=true;
+    document.getElementById('live-on').hidden=false;
+    document.getElementById('live-msg').innerHTML='';
+    document.getElementById('l-w').textContent=num(w,0);
+    document.getElementById('l-eur').textContent=eur(w/1000*pr);
+    const kwh=(d.total_power_import_kwh ?? ((d.total_power_import_t1_kwh||0)+(d.total_power_import_t2_kwh||0)));
+    document.getElementById('l-today').textContent=num(kwh,1)+' kWh op de teller';
+    if(d.total_liter_m3!==undefined&&d.total_liter_m3!==null){
+      document.getElementById('l-water-row').hidden=false;
+      document.getElementById('l-water').textContent=num(d.total_liter_m3,3)+' m³ op de teller';
+    }
+  }catch(e){
+    clearInterval(liveT); liveT=null;
+    const https=location.protocol==='https:';
+    document.getElementById('live-msg').innerHTML='<div class="note"><b>Geen verbinding met de P1-uitlezer.</b><br>'+
+      (https?'Deze pagina draait op een beveiligde (https) adres, en je browser mag daarvandaan niet naar een apparaat in je eigen netwerk. Voor live meelezen heb je de offline-versie van deze app nodig, of de HomeWizard-app zelf.'
+            :'Controleer of je op hetzelfde wifi-netwerk zit, of het IP-adres klopt, en of de lokale API aanstaat in de HomeWizard-app.')+
+      '</div>';
+  }
+}
+
+/* ---------- start ---------- */
+(function init(){
+  if(S.set.ip) document.getElementById('i-ip').value=S.set.ip;
+  fillSettings(); fillBackup(); render();
+  if(!S.configured&&!S.readings.length){ go('inst'); }
+  const sub=document.getElementById('hsub');
+  sub.textContent = S.set.gasOn ? "Stroom, water en gas in euro's" : "Stroom en water in euro's";
+})();
+
+/* offline beschikbaar maken; mislukt stil waar dat niet mag */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    try{ navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(()=>{}); }catch(e){}
+  });
+}
+</script>
+</body>
+</html>
