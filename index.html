@@ -303,11 +303,14 @@ const KEY='meterstand_v1';
    netkosten Fluvius Imewo (Brugge), accijnzen, en Farys-tarieven 2026.
    Schattingen: capaciteitstarief (maandpiek) en de Brugse saneringsbijdrage. */
 const DEF={elecMode:'dual',pDag:0.339,pNacht:0.300,pEnkel:0.325,
-           eVast:85,capTarief:60.90,piekTerug:4.5,
+           eVast:85,capTarief:60.90,piekTerug:4.0,
            pWater:6.50,wVast:21,gasOn:true,pGas:1.16,gVast:155,ip:''};
 const SEED=[
  {ts:new Date('2026-08-31T12:00:00').getTime(),dag:210,nacht:289,enkel:null,water:6,gas:280,piek:null},
- {ts:new Date('2026-11-21T11:00:00').getTime(),dag:726.138,nacht:651.345,enkel:null,water:24.875,gas:516.2211,piek:5.431}
+ /* maandpieken uit de kwartierwaarden van Fluvius */
+ {ts:new Date('2026-09-30T23:00:00').getTime(),dag:null,nacht:null,enkel:null,water:null,gas:null,piek:3.616},
+ {ts:new Date('2026-10-31T23:00:00').getTime(),dag:null,nacht:null,enkel:null,water:null,gas:null,piek:3.764},
+ {ts:new Date('2026-11-21T11:00:00').getTime(),dag:726.138,nacht:651.345,enkel:null,water:24.875,gas:516.2211,piek:5.432}
 ];
 let S=load();
 
