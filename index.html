@@ -97,7 +97,14 @@ button{font:inherit;cursor:pointer;border:none;border-radius:10px}
 .hitem .eu{font-size:15px;font-weight:700;letter-spacing:-.015em}
 .hitem .de{font-size:12.5px;color:var(--faint);margin-top:3px}
 .bars{display:flex;align-items:flex-end;gap:5px;height:84px;margin:8px 0 16px}
-.bars div{flex:1;background:var(--elec);border-radius:3px 3px 0 0;min-height:3px;opacity:.85}
+.bars div{flex:1;background:var(--elec);border-radius:3px 3px 0 0;min-height:3px;opacity:.85;min-width:0}
+.bars.dense{gap:1px;height:110px}
+.bars.dense div{border-radius:1px 1px 0 0}
+.bars.uur{gap:2px;height:96px}
+.bars.uur div{background:var(--water);border-radius:2px 2px 0 0}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin:-8px 0 14px;font-variant-numeric:tabular-nums}
+.imp{border:1px dashed var(--line);border-radius:12px;padding:16px;text-align:center}
+.imp p{font-size:13px;color:var(--muted);line-height:1.5}
 
 .empty{text-align:center;padding:40px 10px;color:var(--muted)}
 .empty h3{font-size:16px;color:var(--ink);margin-bottom:8px;font-weight:650}
@@ -225,6 +232,15 @@ nav.tabs svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1
 
   <!-- ============ HISTORIE ============ -->
   <section class="page" id="p-hist">
+    <div class="card">
+      <h3>Fluvius-export</h3>
+      <div class="imp">
+        <p>Haal je verbruiksgeschiedenis op mijn.fluvius.be en laat de app ze inlezen. Maand-, dag- en kwartierbestanden mogen samen.</p>
+        <button class="btn sm ghost" style="margin-top:12px" onclick="document.getElementById('flu').click()">Bestanden kiezen</button>
+        <input type="file" id="flu" accept=".csv,text/csv" multiple hidden onchange="importFlu(this)">
+      </div>
+      <div id="flu-info"></div>
+    </div>
     <div id="hist-body"></div>
   </section>
 
@@ -316,9 +332,9 @@ let S=load();
 
 function load(){
   try{const r=JSON.parse(localStorage.getItem(KEY));
-    if(r&&r.set) return {set:Object.assign({},DEF,r.set),readings:r.readings||[],configured:!!r.configured};
+    if(r&&r.set) return {set:Object.assign({},DEF,r.set),readings:r.readings||[],configured:!!r.configured,flu:r.flu||null};
   }catch(e){}
-  return {set:Object.assign({},DEF),readings:SEED.map(r=>Object.assign({},r)),configured:true};
+  return {set:Object.assign({},DEF),readings:SEED.map(r=>Object.assign({},r)),configured:true,flu:null};
 }
 function save(){localStorage.setItem(KEY,JSON.stringify(S))}
 
@@ -329,6 +345,84 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.cla
 function parseN(v){if(v===null||v===undefined)return null;v=String(v).trim().replace(',','.');if(v==='')return null;const n=parseFloat(v);return isNaN(n)?null:n}
 function dmy(ts){return new Date(ts).toLocaleDateString('nl-BE',{day:'numeric',month:'short',year:'numeric'})}
 function dm(ts){return new Date(ts).toLocaleDateString('nl-BE',{day:'numeric',month:'short'})}
+
+/* ---------- Fluvius-export inlezen ---------- */
+function fluParse(text){
+  text=text.replace(/^﻿/,'');
+  const lines=text.split(/\r?\n/).filter(l=>l.trim()); if(!lines.length) return null;
+  const head=lines[0].split(';').map(h=>h.trim().toLowerCase());
+  const ix=n=>head.findIndex(h=>h.startsWith(n));
+  const iVd=ix('van (datum'),iVt=ix('van (tijd'),iTd=ix('tot (datum'),iTt=ix('tot (tijd'),
+        iReg=ix('register'),iVol=ix('volume');
+  if(iVd<0||iReg<0||iVol<0) return null;
+  const dt=(d,t)=>{const m=/^(\d{2})-(\d{2})-(\d{4})$/.exec((d||'').trim()); if(!m) return null;
+    const q=((t||'00:00:00').trim().split(':')).map(Number);
+    return new Date(+m[3],+m[2]-1,+m[1],q[0]||0,q[1]||0,0);};
+  const out=[];
+  for(let i=1;i<lines.length;i++){
+    const c=lines[i].split(';'); if(c.length<=iVol) continue;
+    const van=dt(c[iVd],c[iVt]); if(!van) continue;
+    const raw=(c[iVol]||'').trim();
+    out.push({van,tot:dt(c[iTd],c[iTt]),reg:(c[iReg]||'').trim(),vol:raw===''?null:parseFloat(raw.replace(',','.'))});
+  }
+  if(!out.length) return null;
+  const span=out[0].tot?(out[0].tot-out[0].van)/60000:0;
+  return {soort: span<=20?'kwartier':(span<=2160?'dag':'maand'), rijen:out};
+}
+function fluBundel(rijen){
+  const m=new Map();
+  for(const r of rijen){
+    if(r.vol===null) continue;
+    const k=+r.van; let o=m.get(k);
+    if(!o){o={ts:r.van,afn:0,inj:0,dag:0,nacht:0};m.set(k,o);}
+    if(/^afname/i.test(r.reg)){o.afn+=r.vol; if(/dag$/i.test(r.reg))o.dag+=r.vol; else o.nacht+=r.vol;}
+    else o.inj+=r.vol;
+  }
+  return [...m.values()].sort((a,b)=>a.ts-b.ts);
+}
+const mKey=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+function fluVerwerk(bestanden){
+  const res={dagen:[],maanden:[],uur:null,basis:null,injTotaal:null,van:null,tot:null,bron:[]};
+  const maand=new Map();
+  const pak=k=>maand.get(k)||maand.set(k,{k,dag:0,nacht:0,inj:0,piek:null,piekTs:null}).get(k);
+  for(const t of bestanden){
+    const p=fluParse(t); if(!p) continue;
+    const b=fluBundel(p.rijen); if(!b.length) continue;
+    res.bron.push(p.soort);
+    if(!res.van||+b[0].ts<res.van) res.van=+b[0].ts;
+    if(!res.tot||+b[b.length-1].ts>res.tot) res.tot=+b[b.length-1].ts;
+    if(p.soort==='dag') res.dagen=b.map(o=>({d:+o.ts,dag:o.dag,nacht:o.nacht,inj:o.inj}));
+    if(p.soort==='maand') for(const o of b){const e=pak(mKey(o.ts)); e.dag=o.dag; e.nacht=o.nacht; e.inj=o.inj;}
+    if(p.soort==='kwartier'){
+      const pk=new Map();
+      for(const o of b){const k=mKey(o.ts),kw=o.afn*4,c=pk.get(k); if(!c||kw>c.kw) pk.set(k,{kw,ts:o.ts});}
+      for(const [k,v] of pk){const e=pak(k); e.piek=v.kw; e.piekTs=+v.ts;}
+      const uur=Array.from({length:24},()=>[]);
+      for(const o of b) uur[o.ts.getHours()].push(o.afn*4);
+      res.uur=uur.map(a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0);
+      const nacht=new Map();
+      for(const o of b){const h=o.ts.getHours(); if(h<2||h>=5) continue;
+        const d=o.ts.toDateString(); if(!nacht.has(d)) nacht.set(d,[]); nacht.get(d).push(o.afn*4);}
+      const med=a=>{const z=[...a].sort((x,y)=>x-y),n=z.length;return n?(n%2?z[(n-1)/2]:(z[n/2-1]+z[n/2])/2):0};
+      const rij=[...nacht.values()].filter(a=>a.length>=8);
+      if(rij.length) res.basis={mediaan:med(rij.map(med)),min:Math.min(...rij.map(a=>Math.min(...a))),nachten:rij.length};
+      res.injTotaal=b.reduce((s,o)=>s+o.inj,0);
+    }
+  }
+  res.maanden=[...maand.values()].sort((a,b)=>a.k<b.k?-1:1);
+  return res.maanden.length||res.dagen.length?res:null;
+}
+function importFlu(el){
+  const fs=[...el.files]; el.value='';
+  if(!fs.length) return;
+  document.getElementById('flu-info').innerHTML='<p class="hint" style="margin-top:12px">Inlezen…</p>';
+  Promise.all(fs.map(f=>f.text())).then(txt=>{
+    let r=null;
+    try{ r=fluVerwerk(txt); }catch(e){ r=null; }
+    if(!r){ document.getElementById('flu-info').innerHTML='<div class="note">Deze bestanden herken ik niet als een Fluvius-export. Download ze opnieuw via mijn.fluvius.be en kies de CSV-versie.</div>'; return; }
+    S.flu=r; save(); renderHist(); render(); toast('Ingelezen');
+  }).catch(()=>{document.getElementById('flu-info').innerHTML='<div class="note">Kon de bestanden niet lezen.</div>';});
+}
 
 /* ---------- berekening ---------- */
 const KEYS=()=>['elec','water'].concat(S.set.gasOn?['gas']:[]);
@@ -344,7 +438,13 @@ function hasVal(r,k){
   if(k==='elec') return elecOf(r)!==null;
   return (r[k]??null)!==null;
 }
-function pieken(){return S.readings.map(r=>r.piek??null).filter(v=>v!==null&&v>0)}
+function pieken(){
+  if(S.flu&&S.flu.maanden){
+    const p=S.flu.maanden.filter(m=>m.piek!==null&&m.piek>0.5).map(m=>m.piek);
+    if(p.length) return p;
+  }
+  return S.readings.map(r=>r.piek??null).filter(v=>v!==null&&v>0);
+}
 function gemPiek(){const p=pieken();return p.length?p.reduce((a,b)=>a+b,0)/p.length:S.set.piekTerug}
 function piekKw(){return Math.max(2.5,gemPiek())}
 function capPerDag(){return piekKw()*S.set.capTarief/365.25}
@@ -450,10 +550,82 @@ function renderPiek(){
   el.innerHTML=h;
 }
 
-function renderHist(){
-  const el=document.getElementById('hist-body'), act=KEYS().filter(k=>reeks(k).length);
-  if(!act.length){el.innerHTML='<div class="empty"><h3>Nog niets te tonen</h3><p class="hint">Na twee meterstanden verschijnt hier je verloop.</p></div>';return}
+function dagKost(o){
+  return o.dag*S.set.pDag + o.nacht*S.set.pNacht + S.set.eVast/365.25 + capPerDag();
+}
+function renderFluInfo(){
+  const el=document.getElementById('flu-info'); if(!el) return;
+  if(!S.flu){ el.innerHTML=''; return; }
+  const f=S.flu, soort=[...new Set(f.bron)].join(', ');
+  el.innerHTML='<div class="kv"><span>Ingelezen</span><b>'+soort+'</b></div>'+
+    '<div class="kv"><span>Periode</span><b>'+dm(f.van)+' – '+dm(f.tot)+'</b></div>'+
+    '<div class="kv"><span>Dagen</span><b class="num">'+f.dagen.length+'</b></div>'+
+    '<button class="btn sm ghost" style="width:100%;margin-top:12px" onclick="wisFlu()">Verwijderen</button>';
+}
+function wisFlu(){ S.flu=null; save(); renderFluInfo(); renderHist(); render(); toast('Verwijderd'); }
+
+function fluHtml(){
+  const f=S.flu; if(!f) return '';
   let h='';
+  /* per dag */
+  if(f.dagen.length>1){
+    const k=f.dagen.map(dagKost), mx=Math.max(...k);
+    h+='<div class="card"><h3>Euro per dag</h3><div class="bars dense">'+
+      f.dagen.map((o,i)=>'<div style="height:'+(k[i]/mx*100)+'%" title="'+dm(o.d)+' '+eur(k[i])+'"></div>').join('')+
+      '</div><div class="axis"><span>'+dm(f.dagen[0].d)+'</span><span>'+dm(f.dagen[f.dagen.length-1].d)+'</span></div>'+
+      '<div class="kv"><span>Gemiddeld</span><b class="num">'+eur(k.reduce((a,b)=>a+b,0)/k.length)+' per dag</b></div>'+
+      '<div class="kv"><span>Duurste dag</span><b class="num">'+eur(mx)+' op '+dm(f.dagen[k.indexOf(mx)].d)+'</b></div>'+
+      '</div>';
+  }
+  /* per maand */
+  const mm=f.maanden.filter(m=>m.dag+m.nacht>5);
+  if(mm.length){
+    h+='<div class="card"><h3>Per maand</h3>';
+    for(const m of mm){
+      const kost=m.dag*S.set.pDag+m.nacht*S.set.pNacht;
+      const nm=new Date(m.k+'-01T12:00:00').toLocaleDateString('nl-BE',{month:'long',year:'numeric'});
+      h+='<div class="hitem"><div class="top"><span class="dt">'+nm+'</span>'+
+         '<span class="eu num">'+eur(kost)+'</span></div>'+
+         '<div class="de num">'+num(m.dag,1)+' kWh dag &middot; '+num(m.nacht,1)+' kWh nacht'+
+         (m.piek!==null&&m.piek>0.5?' &middot; piek '+num(m.piek,2)+' kW op '+
+           new Date(m.piekTs).toLocaleString('nl-BE',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'')+
+         '</div></div>';
+    }
+    h+='<p class="hint" style="margin-top:10px">Bedragen zijn enkel je verbruikskosten; vaste kosten staan apart in je tarieven.</p></div>';
+  }
+  /* uurprofiel */
+  if(f.uur){
+    const mx=Math.max(...f.uur);
+    h+='<div class="card"><h3>Jouw dagpatroon</h3><div class="bars uur">'+
+      f.uur.map(v=>'<div style="height:'+(v/mx*100)+'%"></div>').join('')+
+      '</div><div class="axis"><span>00u</span><span>06u</span><span>12u</span><span>18u</span><span>23u</span></div>'+
+      '<div class="kv"><span>Rustigste uur</span><b class="num">'+num(Math.min(...f.uur)*1000,0)+' W om '+String(f.uur.indexOf(Math.min(...f.uur))).padStart(2,'0')+'u</b></div>'+
+      '<div class="kv"><span>Drukste uur</span><b class="num">'+num(mx*1000,0)+' W om '+String(f.uur.indexOf(mx)).padStart(2,'0')+'u</b></div>'+
+      '</div>';
+  }
+  /* basislast + injectie */
+  if(f.basis||f.injTotaal!==null){
+    h+='<div class="card"><h3>Wat er altijd doorloopt</h3>';
+    if(f.basis){
+      h+='<div class="kv"><span>Basislast \'s nachts<span class="qt">mediaan tussen 2 en 5 uur, over '+f.basis.nachten+' nachten</span></span><b class="num">'+num(f.basis.mediaan*1000,0)+' W</b></div>';
+      h+='<div class="kv"><span>Laagste kwartier</span><b class="num">'+num(f.basis.min*1000,0)+' W</b></div>';
+      h+='<div class="kv"><span>Kost per jaar</span><b class="num">'+eur(f.basis.mediaan*24*365*S.set.pNacht)+'</b></div>';
+    }
+    if(f.injTotaal!==null){
+      h+='<div class="kv"><span>Ge&iuml;njecteerd in deze periode</span><b class="num">'+num(f.injTotaal,3)+' kWh</b></div>';
+      if(f.injTotaal<1) h+='<div class="note" style="margin-top:12px"><b>Nul injectie.</b> Als er zonnepanelen op dit adres liggen, hebben die in deze hele periode niets aan het net geleverd.</div>';
+    }
+    h+='</div>';
+  }
+  return h;
+}
+
+function renderHist(){
+  renderFluInfo();
+  const el=document.getElementById('hist-body'), act=KEYS().filter(k=>reeks(k).length);
+  let h=fluHtml();
+  if(!act.length&&!h){el.innerHTML='<div class="empty"><h3>Nog niets te tonen</h3><p class="hint">Lees een Fluvius-export in, of noteer twee meterstanden.</p></div>';return}
+  if(!act.length){el.innerHTML=h+'<div style="height:20px"></div>';return}
   const e=reeks('elec');
   if(e.length>1){
     const mx=Math.max(...e.map(x=>x.perDay));
