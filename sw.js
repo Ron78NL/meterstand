@@ -1,7 +1,7 @@
 /* Mijn Meterstand - service worker
    Eigen cache-voorvoegsel: raakt nooit de opslag van andere apps op ron78nl.github.io aan. */
 const PREFIX = "mtr-";
-const CACHE  = PREFIX + "4";
+const CACHE  = PREFIX + "5";
 const FILES  = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {

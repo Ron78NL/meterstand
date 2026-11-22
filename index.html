@@ -329,6 +329,26 @@ nav.tabs svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1
       </div>
     </div>
 
+
+    <div class="card">
+      <h3>Welkomstkorting</h3>
+      <p class="hint">Uit je Luminus-voorwaarden. Geldt alleen het eerste contractjaar en wordt verrekend op je jaarafrekening.</p>
+      <label class="f"><span>Loopt tot</span><input type="date" id="s-promotot"></label>
+      <div class="two">
+        <label class="f"><span>Stroom <em>% op de energiekost</em></span><input id="s-korte" inputmode="decimal"></label>
+        <label class="f"><span>Stroom <em>eenmalig &euro;</em></span><input id="s-eenme" inputmode="decimal"></label>
+      </div>
+      <div class="two" id="s-promogas">
+        <label class="f"><span>Gas <em>% op de energiekost</em></span><input id="s-kortg" inputmode="decimal"></label>
+        <label class="f"><span>Gas <em>eenmalig &euro;</em></span><input id="s-eenmg" inputmode="decimal"></label>
+      </div>
+      <div class="two">
+        <label class="f"><span>Energiekost dag <em>&euro;/kWh</em></span><input id="s-eendag" inputmode="decimal"></label>
+        <label class="f"><span>Energiekost nacht <em>&euro;/kWh</em></span><input id="s-eennacht" inputmode="decimal"></label>
+      </div>
+      <label class="f" id="s-genbox"><span>Energiekost gas <em>&euro;/m&sup3;</em></span><input id="s-gen" inputmode="decimal"></label>
+      <p class="hint">Dit is alleen het leveringsdeel van je prijs, zonder netkosten, accijnzen en vaste vergoeding. De korting rekent daarop.</p>
+    </div>
     <div class="card" id="live-card">
       <h3>Live meelezen (P1)</h3>
       <div id="live-off">
@@ -384,7 +404,9 @@ const KEY='meterstand_v1';
 const DEF={elecMode:'dual',pDag:0.339,pNacht:0.300,pEnkel:0.325,
            eVast:85,capTarief:60.90,piekTerug:4.0,
            pWater:6.50,wVast:21,gasOn:true,pGas:1.16,gVast:155,ip:'',
-           vsE:68,vsG:69,vsW:242,vsWper:3,afrekM:8};
+           vsE:68,vsG:69,vsW:242,vsWper:3,afrekM:8,
+           eEnDag:0.2128,eEnNacht:0.1738,eEnEnkel:0.1966,gEn:0.895,
+           kortE:36,kortG:35,eenmE:115,eenmG:55,promoTot:'2027-08-31'};
 const SEED=[
  {ts:new Date('2026-08-31T12:00:00').getTime(),dag:210,nacht:289,enkel:null,water:6,gas:280,piek:null},
  {ts:new Date('2026-09-30T23:00:00').getTime(),dag:null,nacht:null,enkel:null,water:null,gas:null,piek:3.616},
@@ -614,16 +636,36 @@ function vsPerJaar(k){
   const v=S.set[VS[k]];
   return (v===null||v===undefined||!(v>0))?null:v*(12/vsPer(k));
 }
+function promoLoopt(){
+  const t=S.set.promoTot?Date.parse(S.set.promoTot+'T23:59:59'):0;
+  return t>Date.now();
+}
+// korting van het eerste contractjaar: percentage op de energiekost + eenmalige cashback
+function kortingVan(k,j){
+  if(!j||!promoLoopt()) return 0;
+  const s=S.set;
+  if(k==='elec'){
+    const x=laatste('elec'); if(!x) return 0;
+    const deel=x.days>0?j.qty/((x.dag||0)+(x.nacht||0)+(x.enkel||0)||1):1;
+    const en=((x.dag||0)*s.eEnDag+(x.nacht||0)*s.eEnNacht+(x.enkel||0)*s.eEnEnkel)*deel;
+    return en*(s.kortE||0)/100+(s.eenmE||0);
+  }
+  if(k==='gas') return j.qty*(s.gEn||0)*(s.kortG||0)/100+(s.eenmG||0);
+  return 0;
+}
 function afrekening(){
-  const r={regels:[],kost:0,betaald:0,saldo:0,compleet:true,mist:[]};
+  const r={regels:[],kost:0,korting:0,nu:0,betaald:0,saldo:0,saldoNa:0,compleet:true,mist:[]};
   for(const k of KEYS()){
     const j=jaarRaming(k), vs=S.set[VS[k]], perJaar=vsPerJaar(k);
     // enkel meetellen wat aan beide kanten bekend is, anders liegt het saldo
-    if(j&&perJaar!==null){ r.kost+=j.kost; r.betaald+=perJaar; }
+    const kort=kortingVan(k,j);
+    if(j&&perJaar!==null){ r.kost+=j.kost; r.korting+=kort; r.betaald+=perJaar; }
     else { r.compleet=false; r.mist.push(k); }
-    r.regels.push({k,raming:j,vs,perJaar,per:vsPer(k)});
+    r.regels.push({k,raming:j,vs,perJaar,per:vsPer(k),korting:kort});
   }
-  r.saldo=r.kost-r.betaald;
+  r.nu=r.kost-r.korting;
+  r.saldo=r.nu-r.betaald;
+  r.saldoNa=r.kost-r.betaald;
   return r;
 }
 function maandenTotAfrek(){
@@ -743,14 +785,20 @@ function detailAfrek(){
     h+='<div class="hero" style="padding:4px 0 18px"><div class="lbl">'+(a.saldo>=0?'Verwacht bij te betalen':'Verwacht terug te krijgen')+'</div>'+
        '<div class="big num" style="font-size:clamp(40px,12vw,58px);color:var('+(a.saldo>=0?'--up':'--down')+')">'+teken+abs+'</div>'+
        '<div class="sub">over een vol jaar</div></div>';
-    const doe=a.regels.filter(r=>r.raming&&r.perJaar!==null&&Math.abs(r.raming.kost-r.perJaar)>60);
+    if(a.korting>0){
+      h+='<div class="kv"><span>Waarvan welkomstkorting<span class="qt">eerste contractjaar, tot '+dmy(Date.parse(S.set.promoTot))+'</span></span><b class="num" style="color:var(--down)">\u2212'+eur(a.korting)+'</b></div>';
+      h+='<div class="kv"><span>Zelfde verbruik zonder korting</span><b class="num">'+(a.saldoNa>=0?'+':'\u2212')+eur(Math.abs(a.saldoNa))+'<span class="qt">vanaf je tweede contractjaar</span></b></div>';
+    }
+    const doe=a.regels.filter(r=>r.raming&&r.perJaar!==null&&Math.abs(r.raming.kost-r.korting-r.perJaar)>60);
     if(doe.length){
       h+='<div class="note"><b>Zo zet je je voorschotten juist.</b><ul style="margin:8px 0 0;padding-left:18px">';
       for(const r of doe){
-        const v=r.raming.kost-r.perJaar, bed=Math.abs(v)/12*r.per;
+        const v=r.raming.kost-r.korting-r.perJaar, bed=Math.abs(v)/12*r.per;
         h+='<li style="margin-top:5px">'+LBL[r.k]+': ongeveer <b>'+eur(bed)+' '+PERIODE[r.per]+' '+(v>0?'erbij':'eraf')+'</b>, dus '+
            eur(r.vs+(v>0?bed:-bed))+' in plaats van '+eur(r.vs)+'.</li>';
       }
+      if(a.korting>0) h+='<p style="margin:12px 0 0;font-size:13px;line-height:1.5">Dit geldt voor je eerste contractjaar, mét korting. Vanaf september 2027 valt die weg en moet er nog eens ongeveer '+
+        eur((a.saldoNa-a.saldo)/12)+' per maand bij.</p>';
       h+='</ul></div>';
     }
   }else{
@@ -767,11 +815,12 @@ function detailAfrek(){
     if(j){
       h+='<div class="kv"><span>Verwacht jaarverbruik</span><b class="num">'+num(j.qty,0)+' '+j.eenheid+'</b></div>'+
          '<div class="kv"><span>Verwachte jaarkost</span><b class="num">'+eur(j.kost)+'</b></div>';
+      if(r.korting>0) h+='<div class="kv"><span>Welkomstkorting</span><b class="num" style="color:var(--down)">\u2212'+eur(r.korting)+'</b></div>';
     } else h+='<div class="kv"><span>Nog te weinig metingen</span><b>–</b></div>';
     if(r.perJaar!==null){
       h+='<div class="kv"><span>Voorschot</span><b class="num">'+eur(r.vs)+'<span class="qt">'+PERIODE[r.per]+', '+eur(r.perJaar)+' per jaar</span></b></div>';
       if(j){
-        const s=j.kost-r.perJaar;
+        const s=j.kost-r.korting-r.perJaar;
         h+='<div class="kv"><span>Saldo</span><b class="num" style="color:var('+(s>=0?'--up':'--down')+')">'+(s>=0?'+':'−')+eur(Math.abs(s))+'</b></div>';
       }
     } else h+='<div class="kv"><span>Voorschot</span><b>niet ingevuld</b></div>';
@@ -780,6 +829,7 @@ function detailAfrek(){
 
   h+='<div class="card"><h3>Hoe ik dit bereken</h3>'+
      '<div class="kv"><span>Afrekening verwacht</span><b>over ongeveer '+m+' maand'+(m>1?'en':'')+'</b></div>'+
+     (a.korting>0?'<p class="hint" style="margin-top:12px">Je welkomstkorting geldt alleen het eerste contractjaar en wordt verrekend op je afrekening. Daarna valt ze weg, dus reken voor je tweede jaar met het hogere bedrag hierboven.</p>':'')+
      '<p class="hint" style="margin-top:12px">Je meetperiode loopt niet over een heel jaar, en gas en stroom schommelen sterk met de seizoenen. '+
      'Daarom reken ik je gemeten verbruik niet recht toe naar twaalf maanden, maar verdeel ik het over het jaar volgens een normaal Vlaams verbruikspatroon: '+
      'veel gas in januari, bijna niets in juli. Hoe langer je meet, hoe minder die correctie nog uitmaakt.</p></div>';
@@ -1039,6 +1089,11 @@ function fillSettings(){
   set('s-vse',s.vsE);set('s-vsg',s.vsG);set('s-vsw',s.vsW);
   document.getElementById('s-vswper').value=String(s.vsWper||1);
   document.getElementById('s-afrekm').value=String(s.afrekM||1);
+  set('s-korte',s.kortE);set('s-eenme',s.eenmE);set('s-kortg',s.kortG);set('s-eenmg',s.eenmG);
+  set('s-eendag',s.eEnDag);set('s-eennacht',s.eEnNacht);set('s-gen',s.gEn);
+  document.getElementById('s-promotot').value=s.promoTot||'';
+  document.getElementById('s-promogas').hidden=!s.gasOn;
+  document.getElementById('s-genbox').hidden=!s.gasOn;
 }
 function saveSettings(){
   const g=id=>parseN(document.getElementById(id).value), s=S.set;
@@ -1049,6 +1104,9 @@ function saveSettings(){
   s.vsE=g('s-vse'); s.vsG=g('s-vsg'); s.vsW=g('s-vsw');
   s.vsWper=parseInt(document.getElementById('s-vswper').value,10)||1;
   s.afrekM=parseInt(document.getElementById('s-afrekm').value,10)||1;
+  s.kortE=g('s-korte')??0; s.eenmE=g('s-eenme')??0; s.kortG=g('s-kortg')??0; s.eenmG=g('s-eenmg')??0;
+  s.eEnDag=g('s-eendag')??s.eEnDag; s.eEnNacht=g('s-eennacht')??s.eEnNacht; s.gEn=g('s-gen')??s.gEn;
+  s.promoTot=document.getElementById('s-promotot').value||'';
   S.configured=true; save(); render(); toast('Bewaard'); go('nu');
 }
 function fillBackup(){const t=document.getElementById('bak'); if(t) t.value=JSON.stringify(S);}
