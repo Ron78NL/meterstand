@@ -274,7 +274,14 @@ nav.tabs svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1
         <label class="f"><span>Stroom <em>&euro; per maand</em></span><input id="s-vse" inputmode="decimal"></label>
         <label class="f" id="s-vsgbox"><span>Gas <em>&euro; per maand</em></span><input id="s-vsg" inputmode="decimal"></label>
       </div>
-      <label class="f"><span>Water <em>&euro; per maand</em></span><input id="s-vsw" inputmode="decimal" placeholder="staat op je Farys-factuur"></label>
+      <div class="two">
+        <label class="f"><span>Water <em>&euro;</em></span><input id="s-vsw" inputmode="decimal" placeholder="bedrag"></label>
+        <label class="f"><span>Water <em>hoe vaak</em></span>
+          <select id="s-vswper">
+            <option value="1">per maand</option><option value="3">per kwartaal</option>
+            <option value="6">per half jaar</option><option value="12">per jaar</option>
+          </select></label>
+      </div>
       <label class="f"><span>Maand van je jaarafrekening</span>
         <select id="s-afrekm">
           <option value="1">januari</option><option value="2">februari</option><option value="3">maart</option>
@@ -377,7 +384,7 @@ const KEY='meterstand_v1';
 const DEF={elecMode:'dual',pDag:0.339,pNacht:0.300,pEnkel:0.325,
            eVast:85,capTarief:60.90,piekTerug:4.0,
            pWater:6.50,wVast:21,gasOn:true,pGas:1.16,gVast:155,ip:'',
-           vsE:68,vsG:69,vsW:null,afrekM:8};
+           vsE:68,vsG:69,vsW:242,vsWper:3,afrekM:8};
 const SEED=[
  {ts:new Date('2026-08-31T12:00:00').getTime(),dag:210,nacht:289,enkel:null,water:6,gas:280,piek:null},
  {ts:new Date('2026-09-30T23:00:00').getTime(),dag:null,nacht:null,enkel:null,water:null,gas:null,piek:3.616},
@@ -601,15 +608,20 @@ function jaarRaming(k){
   const q=x.qty/deel; return {qty:q,eenheid:'m³',kost:q*s.pGas+s.gVast,deel};
 }
 const VS={elec:'vsE',gas:'vsG',water:'vsW'};
+const PERIODE={1:'per maand',3:'per kwartaal',6:'per half jaar',12:'per jaar'};
+function vsPer(k){ return k==='water'?(S.set.vsWper||1):1; }
+function vsPerJaar(k){
+  const v=S.set[VS[k]];
+  return (v===null||v===undefined||!(v>0))?null:v*(12/vsPer(k));
+}
 function afrekening(){
   const r={regels:[],kost:0,betaald:0,saldo:0,compleet:true,mist:[]};
   for(const k of KEYS()){
-    const j=jaarRaming(k), vs=S.set[VS[k]];
-    const perJaar=(vs===null||vs===undefined||!(vs>0))?null:vs*12;
+    const j=jaarRaming(k), vs=S.set[VS[k]], perJaar=vsPerJaar(k);
     // enkel meetellen wat aan beide kanten bekend is, anders liegt het saldo
     if(j&&perJaar!==null){ r.kost+=j.kost; r.betaald+=perJaar; }
     else { r.compleet=false; r.mist.push(k); }
-    r.regels.push({k,raming:j,vs,perJaar});
+    r.regels.push({k,raming:j,vs,perJaar,per:vsPer(k)});
   }
   r.saldo=r.kost-r.betaald;
   return r;
@@ -731,11 +743,15 @@ function detailAfrek(){
     h+='<div class="hero" style="padding:4px 0 18px"><div class="lbl">'+(a.saldo>=0?'Verwacht bij te betalen':'Verwacht terug te krijgen')+'</div>'+
        '<div class="big num" style="font-size:clamp(40px,12vw,58px);color:var('+(a.saldo>=0?'--up':'--down')+')">'+teken+abs+'</div>'+
        '<div class="sub">over een vol jaar</div></div>';
-    if(Math.abs(a.saldo)>120){
-      const per=Math.round(Math.abs(a.saldo)/12);
-      h+='<div class="note"><b>Je voorschot staat '+(a.saldo>0?'te laag':'te hoog')+'.</b> '+
-         'Ongeveer '+eur(per)+' per maand '+(a.saldo>0?'erbij':'eraf')+' en je komt uit op nul. '+
-         'Dat pas je aan in MyLuminus of MyFarys — beter nu dan bij de afrekening.</div>';
+    const doe=a.regels.filter(r=>r.raming&&r.perJaar!==null&&Math.abs(r.raming.kost-r.perJaar)>60);
+    if(doe.length){
+      h+='<div class="note"><b>Zo zet je je voorschotten juist.</b><ul style="margin:8px 0 0;padding-left:18px">';
+      for(const r of doe){
+        const v=r.raming.kost-r.perJaar, bed=Math.abs(v)/12*r.per;
+        h+='<li style="margin-top:5px">'+LBL[r.k]+': ongeveer <b>'+eur(bed)+' '+PERIODE[r.per]+' '+(v>0?'erbij':'eraf')+'</b>, dus '+
+           eur(r.vs+(v>0?bed:-bed))+' in plaats van '+eur(r.vs)+'.</li>';
+      }
+      h+='</ul></div>';
     }
   }else{
     h+='<div class="note">Vul je voorschotbedragen in bij Instellingen, dan reken ik hier je afrekening uit.</div>';
@@ -753,7 +769,7 @@ function detailAfrek(){
          '<div class="kv"><span>Verwachte jaarkost</span><b class="num">'+eur(j.kost)+'</b></div>';
     } else h+='<div class="kv"><span>Nog te weinig metingen</span><b>–</b></div>';
     if(r.perJaar!==null){
-      h+='<div class="kv"><span>Voorschot</span><b class="num">'+eur(r.vs)+'<span class="qt">per maand, '+eur(r.perJaar)+' per jaar</span></b></div>';
+      h+='<div class="kv"><span>Voorschot</span><b class="num">'+eur(r.vs)+'<span class="qt">'+PERIODE[r.per]+', '+eur(r.perJaar)+' per jaar</span></b></div>';
       if(j){
         const s=j.kost-r.perJaar;
         h+='<div class="kv"><span>Saldo</span><b class="num" style="color:var('+(s>=0?'--up':'--down')+')">'+(s>=0?'+':'−')+eur(Math.abs(s))+'</b></div>';
@@ -1021,6 +1037,7 @@ function fillSettings(){
   set('s-cap',s.capTarief);set('s-piekterug',s.piekTerug);
   set('s-pwater',s.pWater);set('s-wvast',s.wVast);set('s-pgas',s.pGas);set('s-gvast',s.gVast);
   set('s-vse',s.vsE);set('s-vsg',s.vsG);set('s-vsw',s.vsW);
+  document.getElementById('s-vswper').value=String(s.vsWper||1);
   document.getElementById('s-afrekm').value=String(s.afrekM||1);
 }
 function saveSettings(){
@@ -1030,6 +1047,7 @@ function saveSettings(){
   s.pWater=g('s-pwater')??s.pWater; s.wVast=g('s-wvast')??s.wVast;
   s.pGas=g('s-pgas')??s.pGas; s.gVast=g('s-gvast')??s.gVast;
   s.vsE=g('s-vse'); s.vsG=g('s-vsg'); s.vsW=g('s-vsw');
+  s.vsWper=parseInt(document.getElementById('s-vswper').value,10)||1;
   s.afrekM=parseInt(document.getElementById('s-afrekm').value,10)||1;
   S.configured=true; save(); render(); toast('Bewaard'); go('nu');
 }
