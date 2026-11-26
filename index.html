@@ -243,6 +243,16 @@ nav.tabs svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1
   <!-- ====== INVOEREN ====== -->
   <section class="page" id="p-in">
     <p class="hint">Lees je standen af en vul ze hier in. Op de elektriciteitsmeter druk je op de groene knop tot je <b>1.8.1</b> ziet (dag), <b>1.8.2</b> (nacht) en <b>1.6.0</b> (maandpiek). Op de watermeter de blauwe knop.</p>
+    <div class="card" id="c-p1">
+      <h3>Uit je P1 Meter</h3>
+      <p class="hint">Je uitlezer kent je standen al. Open hem, kopieer de tekst die verschijnt, en plak ze hieronder &mdash; dan vul ik het formulier zelf in.</p>
+      <label class="f"><span>IP-adres van je P1 Meter</span><input id="p1-ip" inputmode="decimal" placeholder="192.168.0.42" onchange="p1Ip()"></label>
+      <a class="btn sm ghost" id="p1-link" style="display:block;text-align:center;text-decoration:none" target="_blank" rel="noopener">Open je P1 Meter</a>
+      <label class="f"><span>Geplakte tekst</span><textarea id="p1-json" rows="3" spellcheck="false" placeholder="plak hier"></textarea></label>
+      <button class="btn" onclick="p1Plak()">Formulier invullen</button>
+      <div id="p1-uit" class="hint"></div>
+    </div>
+
     <div class="card">
       <h3>Nieuwe meterstand</h3>
       <label class="f"><span>Datum</span><input type="date" id="i-date"></label>
@@ -1040,6 +1050,7 @@ function prepInput(){
   const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
   document.getElementById('i-date').value=d.toISOString().slice(0,10);
   ['i-dag','i-nacht','i-enkel','i-water','i-gas','i-piek'].forEach(k=>document.getElementById(k).value='');
+  p1Vul();
   const rs=[...S.readings].sort((a,b)=>b.ts-a.ts), p=document.getElementById('in-prev');
   if(rs.length){
     const r=rs[0], e=elecOf(r);
@@ -1070,6 +1081,47 @@ function saveReading(){
   toast('Opgeslagen'); render(); go('nu');
 }
 function delReading(ts){ S.readings=S.readings.filter(x=>x.ts!==ts); save(); renderHist(); render(); toast('Gewist'); }
+
+
+/* ============ P1 Meter: standen overnemen ============ */
+function p1Vul(){
+  const ip=(S.set.ip||'').trim(), a=document.getElementById('p1-link');
+  document.getElementById('p1-ip').value=ip;
+  if(ip){ a.href='http://'+ip+'/api/v1/data'; a.textContent='Open je P1 Meter'; a.style.opacity=''; a.style.pointerEvents=''; }
+  else { a.removeAttribute('href'); a.textContent='Vul eerst het IP-adres in'; a.style.opacity='.5'; a.style.pointerEvents='none'; }
+}
+function p1Ip(){ S.set.ip=document.getElementById('p1-ip').value.trim(); save(); p1Vul(); }
+
+function p1Plak(){
+  const t=document.getElementById('p1-json').value.trim(), uit=document.getElementById('p1-uit');
+  if(!t){toast('Plak eerst de tekst uit je P1 Meter');return}
+  let d; try{ d=JSON.parse(t); }
+  catch(e){ toast('Die tekst kan ik niet lezen'); uit.innerHTML='Open het adres hierboven, selecteer alles op die pagina en plak het hier.'; return }
+  const g=(...kk)=>{ for(const k of kk){ const v=d[k]; if(typeof v==='number') return v; } return null; };
+  const dag=g('total_power_import_t1_kwh','energy_import_t1_kwh'),
+        nacht=g('total_power_import_t2_kwh','energy_import_t2_kwh'),
+        tot=g('total_power_import_kwh','energy_import_kwh'),
+        gas=g('total_gas_m3','gas_m3'),
+        water=g('total_liter_m3','water_m3'),
+        inj=g('total_power_export_kwh','energy_export_kwh');
+  const zet=(id,v,n)=>{ if(v===null) return false; document.getElementById(id).value=String(num(v,n)); return true; };
+  const ok=[];
+  if(S.set.elecMode==='dual'){
+    if(zet('i-dag',dag,3)) ok.push('stroom dag');
+    if(zet('i-nacht',nacht,3)) ok.push('stroom nacht');
+  } else if(zet('i-enkel',tot!==null?tot:((dag||0)+(nacht||0)),3)) ok.push('stroom');
+  if(S.set.gasOn&&zet('i-gas',gas,3)) ok.push('gas');
+  if(zet('i-water',water,3)) ok.push('water');
+  if(!ok.length){ toast('Geen meterstanden gevonden'); uit.innerHTML='In deze tekst staan geen standen die ik herken. Kopieer de volledige pagina, niet alleen een stukje.'; return; }
+  const d2=new Date(); d2.setMinutes(d2.getMinutes()-d2.getTimezoneOffset());
+  document.getElementById('i-date').value=d2.toISOString().slice(0,10);
+  let h='Ingevuld: '+ok.join(', ')+'. Controleer en druk op Opslaan.';
+  if(inj!==null) h+='<br>Geïnjecteerd volgens je meter: <b>'+num(inj,3)+' kWh</b>.';
+  const v=[g('active_voltage_l1_v'),g('active_voltage_l2_v'),g('active_voltage_l3_v')].filter(x=>x!==null);
+  if(v.length===3&&v.filter(x=>x<50).length===1) h+='<br>Eén fase meet 0 V. Dat is normaal bij een tweefasige aansluiting.';
+  uit.innerHTML=h;
+  toast('Overgenomen');
+}
 
 /* ================= instellingen ================= */
 function setMode(m){S.set.elecMode=m;fillSettings()}
